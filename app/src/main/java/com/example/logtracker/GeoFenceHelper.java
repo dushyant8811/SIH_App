@@ -4,6 +4,7 @@ import android.app.PendingIntent;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.content.Intent;
+import android.os.Build;
 
 import com.google.android.gms.common.api.ApiException;
 import com.google.android.gms.location.Geofence;
@@ -12,7 +13,9 @@ import com.google.android.gms.location.GeofencingRequest;
 import com.google.android.gms.maps.model.LatLng;
 
 public class GeoFenceHelper extends ContextWrapper {
-    private PendingIntent pendingIntent;
+
+    private static final String TAG = "GeoFenceHelper";
+    PendingIntent pendingIntent;
 
     public GeoFenceHelper(Context base) {
         super(base);
@@ -40,7 +43,11 @@ public class GeoFenceHelper extends ContextWrapper {
             return pendingIntent;
         }
         Intent intent = new Intent(this, MyReceiver.class);
-        pendingIntent = PendingIntent.getBroadcast(this, 2607, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            pendingIntent = PendingIntent.getBroadcast(this, 2607, intent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_MUTABLE);
+        } else {
+            pendingIntent = PendingIntent.getBroadcast(this, 2607, intent, PendingIntent.FLAG_UPDATE_CURRENT);
+        }
         return pendingIntent;
     }
 
@@ -59,3 +66,4 @@ public class GeoFenceHelper extends ContextWrapper {
         return e.getLocalizedMessage();
     }
 }
+

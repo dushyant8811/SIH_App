@@ -6,16 +6,14 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.FragmentActivity;
 
 import android.Manifest;
-import android.app.PendingIntent;
+import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
-import android.location.Location;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Log;
 import android.widget.Toast;
 
-import com.google.android.gms.location.FusedLocationProviderClient;
 import com.google.android.gms.location.Geofence;
 import com.google.android.gms.location.GeofencingClient;
 import com.google.android.gms.location.GeofencingRequest;
@@ -29,7 +27,6 @@ import com.google.android.gms.maps.model.LatLng;
 import com.google.android.gms.maps.model.MarkerOptions;
 import com.google.android.gms.tasks.OnFailureListener;
 import com.google.android.gms.tasks.OnSuccessListener;
-import com.google.android.gms.tasks.Task;
 
 public class MapsActivity extends FragmentActivity implements OnMapReadyCallback, GoogleMap.OnMapLongClickListener {
 
@@ -37,11 +34,11 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
     private static final int BACKGROUND_LOCATION_ACCESS_REQUEST_CODE = 100;
     private GoogleMap mMap;
     private GeofencingClient geofencingClient;
-    private FusedLocationProviderClient fusedLocationProviderClient;
     private GeoFenceHelper geoFenceHelper;
     private int FINE_LOCATION_ACCESS_REQUEST_CODE = 10001;
     private String GEOFENCE_ID = "SOME_GEOFENCE_ID";
     private float GEOFENCE_RADIUS = 500;
+    private SharedPreferences sharedPreferences;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -53,8 +50,8 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         mapFragment.getMapAsync(this);
 
         geofencingClient = LocationServices.getGeofencingClient(this);
-        fusedLocationProviderClient = LocationServices.getFusedLocationProviderClient(this);
         geoFenceHelper = new GeoFenceHelper(this);
+        sharedPreferences = getSharedPreferences("GeofencePrefs", MODE_PRIVATE);
     }
 
     @Override
@@ -62,6 +59,18 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         mMap = googleMap;
         enableUserLocation();
         mMap.setOnMapLongClickListener(this);
+        loadExistingGeofence();
+    }
+
+    private void loadExistingGeofence() {
+        float lat = sharedPreferences.getFloat("geofence_lat", 0);
+        float lng = sharedPreferences.getFloat("geofence_lng", 0);
+        if (lat != 0 && lng != 0) {
+            LatLng latLng = new LatLng(lat, lng);
+            addMarker(latLng);
+            addCircle(latLng, GEOFENCE_RADIUS);
+            addGeofence(latLng, GEOFENCE_RADIUS);
+        }
     }
 
     private void enableUserLocation() {
@@ -109,28 +118,48 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         addMarker(latLng);
         addCircle(latLng, GEOFENCE_RADIUS);
         addGeofence(latLng, GEOFENCE_RADIUS);
+
+        // Save the new geofence location
+        SharedPreferences.Editor editor = sharedPreferences.edit();
+        editor.putFloat("geofence_lat", (float) latLng.latitude);
+        editor.putFloat("geofence_lng", (float) latLng.longitude);
+        editor.apply();
     }
 
     private void addGeofence(LatLng latLng, float radius) {
         Geofence geofence = geoFenceHelper.getGeofence(GEOFENCE_ID, latLng, radius, Geofence.GEOFENCE_TRANSITION_ENTER | Geofence.GEOFENCE_TRANSITION_DWELL | Geofence.GEOFENCE_TRANSITION_EXIT);
         GeofencingRequest geofencingRequest = geoFenceHelper.getGeofencingRequest(geofence);
-        PendingIntent pendingIntent = geoFenceHelper.getPendingIntent();
 
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
             return;
         }
-        geofencingClient.addGeofences(geofencingRequest, pendingIntent)
+
+        // Remove any existing geofences before adding the new one
+        geofencingClient.removeGeofences(geoFenceHelper.getPendingIntent())
                 .addOnSuccessListener(new OnSuccessListener<Void>() {
                     @Override
                     public void onSuccess(Void aVoid) {
-                        Log.d(TAG, "onSuccess: Geofence Added...");
+                        // Add the new geofence after successful removal of existing ones
+                        geofencingClient.addGeofences(geofencingRequest, geoFenceHelper.getPendingIntent())
+                                .addOnSuccessListener(new OnSuccessListener<Void>() {
+                                    @Override
+                                    public void onSuccess(Void aVoid) {
+                                        Log.d(TAG, "onSuccess: Geofence Added...");
+                                    }
+                                })
+                                .addOnFailureListener(new OnFailureListener() {
+                                    @Override
+                                    public void onFailure(@NonNull Exception e) {
+                                        String errorMessage = geoFenceHelper.getErrorString(e);
+                                        Log.d(TAG, "onFailure: " + errorMessage);
+                                    }
+                                });
                     }
                 })
                 .addOnFailureListener(new OnFailureListener() {
                     @Override
                     public void onFailure(@NonNull Exception e) {
-                        String errorMessage = geoFenceHelper.getErrorString(e);
-                        Log.d(TAG, "onFailure: " + errorMessage);
+                        Log.d(TAG, "Failed to remove existing geofences: " + e.getMessage());
                     }
                 });
     }
@@ -150,3 +179,4 @@ public class MapsActivity extends FragmentActivity implements OnMapReadyCallback
         mMap.addCircle(circleOptions);
     }
 }
+
